@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment / credentials
+.env
+.aws/
+
+# Generated audit reports (contain real account data)
+report.csv
+report.json
+reports/

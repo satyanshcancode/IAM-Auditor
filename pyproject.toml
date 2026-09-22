@@ -1,0 +1,95 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iam-access-auditor"
+version = "2.0.0"
+description = "AWS IAM Access Auditor & Permission Analyzer with REST API and modern CLI"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "satyanshcancode"}
+]
+keywords = ["aws", "iam", "security", "audit", "permissions", "cloud"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    "boto3>=1.28.0",
+    "botocore>=1.31.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+]
+cli = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "moto>=4.2.0",
+    "httpx>=0.25.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+all = [
+    "iam-access-auditor[api,cli,dev]"
+]
+
+[project.scripts]
+iam-audit = "iam_audit.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/satyanshcancode/IAM-Auditor"
+Repository = "https://github.com/satyanshcancode/IAM-Auditor"
+Issues = "https://github.com/satyanshcancode/IAM-Auditor/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iam_audit*", "aws*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N803"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=iam_audit --cov=aws --cov-report=term-missing --cov-report=html"

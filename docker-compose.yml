@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  iam-audit-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iam-audit-api
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - IAM_AUDIT_API_KEY=${IAM_AUDIT_API_KEY:-}
+    volumes:
+      - ~/.aws:/root/.aws:ro
+    command: ["uvicorn", "iam_audit.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  iam-audit-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iam-audit-cli
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - IAM_AUDIT_API_KEY=${IAM_AUDIT_API_KEY:-}
+    volumes:
+      - ~/.aws:/root/.aws:ro
+      - ./reports:/app/reports
+      - ./output:/app/output
+    profiles:
+      - cli
+    command: ["iam-audit", "audit", "--format", "json", "--output", "/app/output/audit_report.json"]
