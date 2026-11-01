@@ -22,7 +22,15 @@ def extract_user_permissions(username: str) -> set[str] | None:
     if analysis is None:
         return None
 
-    return analysis["effective_actions"]
+    return set(analysis["effective_actions"])
+
+
+def has_admin_access(analysis: dict[str, Any] | None) -> bool:
+    """True when the analysis grants "*" without any explicit deny."""
+    if not analysis:
+        return False
+    actions = analysis.get("effective_actions") or []
+    return "*" in actions and not analysis.get("denied_actions")
 
 
 def format_action(action: str, denied_actions: set[str] | None = None) -> str:

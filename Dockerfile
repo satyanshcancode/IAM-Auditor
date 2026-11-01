@@ -1,34 +1,38 @@
-# Multi-stage build for smaller image
+# Multi-stage Dockerfile for IAM Auditor CLI
 FROM python:3.12-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
+
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 COPY pyproject.toml requirements.txt README.md ./
 COPY aws/ ./aws/
 COPY iam_audit/ ./iam_audit/
-COPY main.py ./
-RUN pip install --no-cache-dir --user -r requirements.txt
-RUN pip install --no-cache-dir --user .
+COPY demo.py ./
 
-# Production stage
-FROM python:3.12-slim
+# Install application dependencies into prefix directory
+RUN pip install --no-cache-dir --prefix=/install .[cli]
+
+# Production Stage - Minimal Runtime
+FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
 
-# Copy application code
+# Copy application files for offline execution & demo
 COPY aws/ ./aws/
 COPY iam_audit/ ./iam_audit/
-COPY main.py ./
+COPY demo.py ./
 
-# Ensure Python can find modules
+# Create unprivileged auditor user (UID 10001)
+RUN useradd --create-home --uid 10001 auditor \
+    && chown -R auditor:auditor /app
+
+USER auditor
+
 ENV PYTHONPATH=/app
 
-EXPOSE 8000
-
-# Default to API server; override with docker-compose or CLI
-CMD ["uvicorn", "iam_audit.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["iam-audit"]
+CMD ["--help"]

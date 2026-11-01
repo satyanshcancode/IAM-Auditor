@@ -13,7 +13,12 @@ from iam_audit.core.engine import (
     run_full_audit,
     search_by_permission,
 )
-from iam_audit.core.models import PermissionAnalysis, UserComparisonResult, AuditReport, SecurityFinding
+from iam_audit.core.models import (
+    AuditReport,
+    PermissionAnalysis,
+    SecurityFinding,
+    UserComparisonResult,
+)
 
 
 class FakeIAM:
@@ -145,12 +150,17 @@ class TestPermissionCheck(unittest.TestCase):
 
 class TestSearchByPermission(unittest.TestCase):
     def test_search_found(self):
-        with patch("aws.policies.iam", FakeIAM()):
-            with patch("aws.policies.list_users", return_value=[
-                {"UserName": "alice", "Arn": "arn:aws:iam::123456789012:user/alice"},
-                {"UserName": "bob", "Arn": "arn:aws:iam::123456789012:user/bob"},
-            ]):
-                result = search_by_permission("s3:GetObject")
+        with (
+            patch("aws.policies.iam", FakeIAM()),
+            patch(
+                "aws.policies.list_users",
+                return_value=[
+                    {"UserName": "alice", "Arn": "arn:aws:iam::123456789012:user/alice"},
+                    {"UserName": "bob", "Arn": "arn:aws:iam::123456789012:user/bob"},
+                ],
+            ),
+        ):
+            result = search_by_permission("s3:GetObject")
 
         self.assertIn("alice", result)
         self.assertIn("bob", result)
@@ -200,9 +210,13 @@ class TestFullAuditAndInventory(unittest.TestCase):
 
     def test_list_inventory(self) -> None:
         with (
-            patch("iam_audit.core.engine.iam_policies.list_users", return_value=[{"UserName": "a"}]),
+            patch(
+                "iam_audit.core.engine.iam_policies.list_users", return_value=[{"UserName": "a"}]
+            ),
             patch("iam_audit.core.engine.iam_policies.list_groups", return_value=[]),
-            patch("iam_audit.core.engine.iam_policies.list_roles", return_value=[{"RoleName": "r"}]),
+            patch(
+                "iam_audit.core.engine.iam_policies.list_roles", return_value=[{"RoleName": "r"}]
+            ),
         ):
             data = list_inventory()
 

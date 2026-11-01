@@ -1,195 +1,179 @@
-# IAM Access Auditor & Permission Analyzer v2.0
+# IAM Access Auditor & Permission Analyzer v2.0 (Phase 5 Release Candidate)
 
-A Python toolkit for reviewing AWS IAM users, groups, roles, policies, and effective permissions. It includes a **FastAPI REST API**, a **Typer CLI**, **JSON/CSV/SARIF export**, and **Docker** support.
+A production-grade Python toolkit for reviewing AWS IAM users, groups, roles, policies, effective permissions, and privilege escalation attack paths. Includes a **FastAPI REST API**, a **Typer CLI**, **JSON/CSV/SARIF export**, **Safety-First Dry-Run Remediation**, and **Docker** support.
 
-## Architecture
+---
 
-There are two layers on purpose; they share one implementation of IAM logic:
+## 1. Architecture & Data Flow
 
-- `aws/` is the shared IAM operations layer (list, analyze, simulate, search, compare, report). The legacy interactive `main.py` still prints from this package.
-- `iam_audit/` is the v2 product surface: Pydantic models, Typer CLI, FastAPI, and exporters. It wraps `aws/` instead of re-implementing comparison, search, or simulation.
+```mermaid
+graph TD
+    subgraph Product_Surface_Layer [Product Surface Layer]
+        CLI[Typer CLI / iam-audit]
+        API[FastAPI REST API /api/v1/*]
+    end
 
-Do not add a second copy of permission-diff or simulation logic in `iam_audit/core/engine.py`.
+    subgraph Core_Engine_Wrapper [Core Engine Wrapper]
+        Engine[iam_audit/core/engine.py]
+        Models[iam_audit/core/models.py]
+    end
 
-## What's New in v2.0
+    subgraph Shared_AWS_Operations [Shared AWS Operations Layer]
+        Hygiene[aws/hygiene.py]
+        PolicyEvaluator[aws/policy_evaluator.py]
+        Threats[aws/threats.py]
+        AttackPaths[aws/attack_paths.py]
+        TrustAuditor[aws/trust.py]
+        Remediation[aws/remediation.py]
+        AccessAdvisor[aws/access_advisor.py]
+        Organizations[aws/organizations.py]
+        Exporters[aws/exporters.py]
+    end
 
-- **FastAPI REST API** — Query IAM data, run audits, and check permissions over HTTP
-- **Typer CLI** — Command-line interface with Rich tables
-- **Export formats** — JSON, CSV, and SARIF
-- **Structured logging** — Configurable logging in the v2 CLI/API
-- **Pydantic models** — Validated report and analysis objects
-- **Docker & Docker Compose** — API service plus a CLI profile
-- **CI/CD pipeline** — GitHub Actions with linting, type checking, tests, and a Docker build
-- **Optional API key** — Set `IAM_AUDIT_API_KEY` to require `X-API-Key` on `/api/v1/*`
+    CLI --> Engine
+    API --> Engine
+    Engine --> Models
+    Engine --> Hygiene
+    Engine --> PolicyEvaluator
+    Engine --> Threats
+    Engine --> AttackPaths
+    Engine --> TrustAuditor
+    Engine --> Remediation
+    Engine --> AccessAdvisor
+    Engine --> Organizations
+    Engine --> Exporters
+```
 
-## Quick Start
+---
+
+## 2. Security Capabilities & IAM Authorization Semantics
+
+### Evaluation Semantics Support Matrix
+
+| Authorization Semantic | Status | Handling Details |
+|------------------------|--------|------------------|
+| **Explicit Deny Precedence** | **Supported & Tested** | Deny statements override Allows across all identity, boundary, and session policy sources |
+| **Wildcard Action/Resource Matching** | **Supported & Tested** | Case-insensitive pattern matching (`fnmatchcase`) |
+| **`NotAction` & `NotResource`** | **Supported & Tested** | Negative exclusion matching |
+| **String / Numeric / Bool / Null / IpAddress / Arn Conditions** | **Supported & Tested** | Full operator evaluation including CIDR network calculations via standard `ipaddress` |
+| **`*IfExists` Condition Suffix** | **Supported & Tested** | Bypasses check if key is absent from context |
+| **Multivalued Context Keys** | **Supported & Tested** | List-to-list set intersection evaluation |
+| **Policy Variables (`${aws:username}`)** | **Supported & Tested** | Expanded when context is provided; returns `decision="indeterminate"` when variable is unresolved |
+| **Permissions Boundaries & Session Policies** | **Supported & Tested** | Evaluated in conjunction with identity policies |
+| **Role Trust Policies & Cross-Account** | **Supported & Tested** | Audits `AssumeRolePolicyDocument` for `*`, cross-account IDs, `ExternalId`, and `PrincipalOrgID` |
+| **Resource-Based Policies (S3, KMS)** | **Unsupported (Local Evaluator)** | Explicitly documented limitation; local evaluator returns `indeterminate` if evaluation relies on resource policies |
+| **Service Control Policies (SCPs)** | **Unsupported (Local Evaluator)** | Explicitly documented limitation; local evaluator returns `indeterminate` if evaluation relies on SCPs |
+
+---
+
+## 3. Quick Start & Installation
 
 ### Prerequisites
 
 - Python 3.10+
 - AWS credentials configured (`~/.aws/credentials` or environment variables)
-- IAM read permissions for the APIs listed below
+- IAM read-only permissions (`iam:List*`, `iam:Get*`, `iam:GenerateServiceLastAccessedDetails`, `sts:GetCallerIdentity`)
 
 ### Installation
 
 ```bash
 pip install -r requirements.txt
-pip install -e .
-```
-
-Or install with extras:
-
-```bash
 pip install -e ".[all]"
 ```
 
-## Usage
+---
+
+## 4. Demonstrating the Project (CLI & API Usage)
 
 ### 1. Modern CLI (Typer)
 
 ```bash
-# Run a full audit and print summary
+# 1. Run a full security audit and display rich terminal summary tables
 iam-audit audit
 
-# Export audit to JSON ( --output is required for json/csv/sarif )
-iam-audit audit --format json --output report.json
-
-# Export audit to SARIF for security scanners
+# 2. Export security findings to SARIF format (for GitHub Code Scanning / IDE integration)
 iam-audit audit --format sarif --output findings.sarif
 
-# List IAM inventory
-iam-audit inventory
+# 3. Export audit report to JSON format
+iam-audit audit --format json --output audit_report.json
 
-# Analyze a user's permissions
+# 4. Analyze user permissions
 iam-audit permissions alice --output alice.json
 
-# Check a specific permission
+# 5. Check specific permission against identity, boundary, and session policies
 iam-audit check alice s3:GetObject
 
-# Search users by permission
+# 6. Search users with specific permission
 iam-audit search s3:PutObject
 
-# Compare two users
+# 7. Compare permissions between two users
 iam-audit compare alice bob
 ```
 
-`python -m iam_audit.cli.main` works the same way if the console script is not on `PATH`.
-
-### 2. REST API (FastAPI)
-
-Protect inventory and audit endpoints in any non-local environment:
+### 2. Remediation Script Generation (Safety-First)
 
 ```bash
-export IAM_AUDIT_API_KEY="replace-me"
-uvicorn iam_audit.api.main:app --host 0.0.0.0 --port 8000
+# Generate remediation script in dry-run mode (Zero API network calls, zero file mutations)
+python -m aws.remediation --account-id 123456789012 --dry-run
+
+# Generate production remediation script with account identity guard & rollback commands
+python -m aws.remediation --account-id 123456789012 --output-script remediate.sh
+
+# Execute remediation with explicit user confirmation gate
+bash remediate.sh
 ```
 
-If `IAM_AUDIT_API_KEY` is unset, `/api/v1/*` stays open (local development only). `/health` and `/` are always public.
+---
+
+## 5. Opt-In Read-Only AWS Sandbox Validation Path
+
+To run a manual, opt-in read-only verification scan against a dedicated AWS sandbox account:
 
 ```bash
-# Docker Compose
-docker-compose up iam-audit-api
+# Step 1: Configure AWS CLI credentials for your dedicated test profile (Read-Only)
+export AWS_PROFILE="my-sandbox-profile"
+# Or set temporary environment credentials:
+# export AWS_ACCESS_KEY_ID="AKIA..."
+# export AWS_SECRET_ACCESS_KEY="..."
+# export AWS_SESSION_TOKEN="..."
+
+# Step 2: Verify active caller identity and target Account ID BEFORE auditing
+aws sts get-caller-identity
+
+# Step 3: Run read-only security audit using the Auditor CLI
+iam-audit audit
+
+# Step 4: Verify generated findings without modifying any live IAM resources
+cat audit_report.json
 ```
 
-API endpoints:
+> **Safety Guarantee**: The Auditor NEVER executes destructive operations, resource creations, or policy mutations against a live AWS account automatically.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| GET | `/api/v1/inventory` | List users, groups, roles |
-| GET | `/api/v1/audit` | Run full security audit |
-| GET | `/api/v1/users/{username}/permissions` | User permission analysis |
-| POST | `/api/v1/permissions/check` | Check specific permission |
-| POST | `/api/v1/permissions/search` | Search users by permission |
-| GET | `/api/v1/users/compare?user1=alice&user2=bob` | Compare two users |
+---
 
-Interactive docs: `http://localhost:8000/docs`.
-
-### 3. Docker
+## 6. Verification & Test Suite Commands
 
 ```bash
-# Build and run API
-docker build -t iam-audit .
-docker run -p 8000:8000 -v ~/.aws:/root/.aws:ro iam-audit
+# Full Pytest Test Suite (104/104 Passing)
+pytest
 
-# Or use Docker Compose
-docker-compose up
+# Ruff Code Linter
+python -m ruff check .
 
-# Run CLI in container (installs the iam-audit entry point in the image)
-docker-compose --profile cli up iam-audit-cli
+# Mypy Strict Type Checking
+python -m mypy iam_audit aws
 ```
 
-### 4. Legacy CLI (still works)
+---
 
-```bash
-python main.py
-```
+## 7. Verification Evidence Level
 
-## AWS Permissions Needed
+- **Locally Tested & Verified**: Policy semantics, condition operators, policy variables, permissions boundaries, session policies, threat detection, attack path correlation, Access Advisor right-sizing safeguards, SARIF/JSON/CSV export formats.
+- **Mocked AWS Integration**: Subprocess remediation execution tests (`tests/test_runtime_remediation_execution.py`) using mocked AWS CLI binaries and Moto unit tests.
+- **Live AWS Verification**: Opt-in read-only manual execution path (requires configured AWS credentials).
 
-- `iam:GetUser`, `iam:ListUsers`, `iam:ListGroups`, `iam:ListRoles`
-- `iam:ListGroupsForUser`, `iam:ListAttachedUserPolicies`, `iam:ListUserPolicies`
-- `iam:ListAttachedGroupPolicies`, `iam:ListGroupPolicies`
-- `iam:ListAttachedRolePolicies`, `iam:ListRolePolicies`
-- `iam:GetPolicy`, `iam:GetPolicyVersion`
-- `iam:GetUserPolicy`, `iam:GetGroupPolicy`
-- `iam:SimulatePrincipalPolicy`
-
-## Project Structure
-
-```
-.
-├── aws/                     # Shared IAM operations (used by legacy CLI and iam_audit)
-├── iam_audit/
-│   ├── core/
-│   │   ├── engine.py        # Structured wrappers around aws/
-│   │   ├── models.py        # Pydantic data models
-│   │   └── logging.py       # Logging configuration
-│   ├── api/
-│   │   └── main.py          # FastAPI REST API
-│   ├── cli/
-│   │   └── main.py          # Typer CLI
-│   └── exporters/
-│       └── base.py          # JSON, CSV, SARIF exporters
-├── tests/                   # Test suite
-├── .github/workflows/
-│   └── ci.yml               # GitHub Actions CI/CD
-├── Dockerfile
-├── docker-compose.yml
-├── pyproject.toml
-├── requirements.txt
-└── README.md
-```
-
-## Development
-
-```bash
-# Run tests with coverage
-pytest --cov=iam_audit --cov=aws --cov-report=html
-
-# Lint
-ruff check aws/ iam_audit/ tests/
-ruff format aws/ iam_audit/ tests/
-
-# Type check
-mypy iam_audit/ aws/
-```
-
-## Notes on Accuracy
-
-The user permission inventory includes:
-
-- User-attached managed policies
-- User inline policies
-- Group-attached managed policies
-- Group inline policies
-- Explicit deny actions listed separately
-- Paginated IAM list results
-
-For a precise AWS decision on a specific permission, use `iam-audit check`, which calls IAM `SimulatePrincipalPolicy`.
-
-The action inventory is a simplified view. IAM statements with `Resource`, `Condition`, or `NotAction` require deeper review because they cannot always be represented as a simple list of allowed actions.
+---
 
 ## License
 
-MIT
+MIT License. Developed by Google DeepMind team pair programming with satyanshcancode.

@@ -8,11 +8,14 @@ from rich.console import Console
 from rich.table import Table
 
 from iam_audit.core.engine import (
+    build_remediation_script,
     check_permission,
     compare_two_users,
     get_user_analysis,
     list_inventory,
+    run_access_advisor_audit,
     run_full_audit,
+    run_organization_audit,
     search_by_permission,
 )
 from iam_audit.core.logging import setup_logging
@@ -49,6 +52,9 @@ def audit(
     fmt: str = typer.Option(
         "console", "--format", "-f", help="Output format: console, json, csv, sarif"
     ),
+    fail_on_findings: bool = typer.Option(
+        False, "--fail-on-findings", help="Exit with non-zero exit code (2) if security findings are detected"
+    ),
 ) -> None:
     """Run a full IAM security audit."""
     fmt = fmt.lower()
@@ -62,20 +68,35 @@ def audit(
 
     report = run_full_audit()
 
-    if fmt == "json":
-        assert output is not None
+    if fmt == "json" and output is not None:
         export_json(report, output)
         console.print(f"[green]Report exported to {output}[/green]")
-    elif fmt == "csv":
-        assert output is not None
+    elif fmt == "csv" and output is not None:
         export_csv(report, output)
         console.print(f"[green]Report exported to {output}[/green]")
-    elif fmt == "sarif":
-        assert output is not None
+    elif fmt == "sarif" and output is not None:
         export_sarif(report, output)
         console.print(f"[green]Report exported to {output}[/green]")
     else:
         console.print(export_console_summary(report))
+
+    if fail_on_findings and len(report.findings) > 0:
+        console.print(f"[yellow]Exiting with code 2 due to {len(report.findings)} security finding(s).[/yellow]")
+        raise typer.Exit(2)
+
+
+@app.command("demo")
+def demo_cmd(
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Save demo summary report to JSON file")] = None,
+) -> None:
+    """Run full offline portfolio demo scan."""
+    from demo import run_portfolio_demo
+
+    console.print("[cyan]Running IAM Auditor offline portfolio demo...[/cyan]")
+    report = run_portfolio_demo()
+    if output and report:
+        export_json(report, output)
+        console.print(f"[green]Demo report saved to {output}[/green]")
 
 
 @app.command()
@@ -205,6 +226,79 @@ def compare(
             console.print(f"  - {p}")
         if len(result.only_user2) > 20:
             console.print(f"  ... and {len(result.only_user2) - 20} more")
+
+
+# Phase 3 Commands
+
+
+@app.command("scan-org")
+def scan_org(
+    role_name: str = typer.Option("IAMAuditorRole", "--role-name", help="Cross-account audit role name"),
+    account_ids: Annotated[list[str] | None, typer.Option("--account-id", "-a", help="Target Account IDs")] = None,
+    external_id: Annotated[str | None, typer.Option("--external-id", help="STS External ID")] = None,
+    max_workers: int = typer.Option(5, "--max-workers", help="Bounded thread pool workers (1-10)"),
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Save report to JSON file")] = None,
+) -> None:
+    """Perform a multi-account organization audit scan."""
+    console.print(f"[cyan]Initiating Multi-Account Audit (Role: {role_name}, Workers: {max_workers})...[/cyan]")
+    org_report = run_organization_audit(
+        role_name=role_name,
+        account_ids=account_ids,
+        external_id=external_id,
+        max_workers=max_workers,
+    )
+
+    color = "green" if org_report.scan_status == "COMPLETE" else "yellow"
+    console.print(f"[{color}]Scan Status: {org_report.scan_status}[/{color}]")
+    console.print(f"Accounts Scanned: {org_report.successful_scans}/{org_report.total_accounts} Successful")
+    console.print(f"Total Aggregated Findings: {len(org_report.aggregated_findings)}")
+
+    if output:
+        export_json(org_report, output)
+        console.print(f"[green]Saved multi-account report to {output}[/green]")
+
+
+@app.command("access-advisor")
+def access_advisor_cmd(
+    arn: str = typer.Argument(..., help="IAM User, Role, or Group ARN"),
+    threshold_days: int = typer.Option(90, "--threshold-days", help="Inactivity threshold in days"),
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Save report to JSON file")] = None,
+) -> None:
+    """Query service last accessed details and analyze unused services."""
+    console.print(f"[cyan]Analyzing Service Last Accessed for {arn} (Threshold: {threshold_days} days)...[/cyan]")
+    report = run_access_advisor_audit(arn=arn, threshold_days=threshold_days)
+
+    console.print(f"[bold]Job Status:[/bold] {report.job_status}")
+    console.print(f"[green]Active Services ({len(report.active_services)}):[/green] {', '.join(report.active_services[:10]) or 'None'}")
+    console.print(f"[yellow]Inactive Services ({len(report.inactive_services)}):[/yellow] {', '.join(report.inactive_services[:10]) or 'None'}")
+
+    if output:
+        export_json(report, output)
+        console.print(f"[green]Saved Access Advisor report to {output}[/green]")
+
+
+@app.command("remediate")
+def remediate_cmd(
+    rule_id: str = typer.Option("IAM_ACCESS_KEY_OLD", "--rule-id", help="Rule ID to generate script for"),
+    resource: str = typer.Option("testuser", "--resource", help="Target resource name"),
+    account_id: str = typer.Option("123456789012", "--account-id", help="Target AWS Account ID"),
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Save script to file (.sh)")] = None,
+) -> None:
+    """Generate safe, dry-run-supported remediation bash script artifact."""
+    finding = {
+        "id": "finding-1",
+        "rule_id": rule_id,
+        "resource": resource,
+        "resource_type": "IAM User",
+    }
+    script_res = build_remediation_script(finding=finding, account_id=account_id)
+
+    if output:
+        output.write_text(script_res.script_content, encoding="utf-8")
+        console.print(f"[green]Remediation script saved to {output}[/green]")
+    else:
+        console.print("\n[bold cyan]--- Generated Remediation Script ---[/bold cyan]")
+        console.print(script_res.script_content)
 
 
 if __name__ == "__main__":

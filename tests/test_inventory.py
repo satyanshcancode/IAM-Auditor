@@ -29,9 +29,7 @@ def test_account_summary_prints_entities() -> None:
 def test_user_summary_and_details() -> None:
     analysis = {
         "groups": [{"GroupName": "devs"}],
-        "policies": [
-            {"name": "UserManaged", "scope": "User", "type": "managed", "owner": "alice"}
-        ],
+        "policies": [{"name": "UserManaged", "scope": "User", "type": "managed", "owner": "alice"}],
         "effective_actions": {"s3:GetObject", "*"},
         "denied_actions": set(),
         "not_actions": [],

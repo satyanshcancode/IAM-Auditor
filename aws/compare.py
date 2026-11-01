@@ -3,7 +3,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from aws import policies
-from aws.permissions import analyze_user_permissions, format_action
+from aws.permissions import analyze_user_permissions, format_action, has_admin_access
 
 
 def user_exists(username: str) -> bool:
@@ -49,8 +49,8 @@ def compute_user_comparison(user1: str, user2: str) -> dict[str, Any] | None:
         "only_user1": sorted(only_user1),
         "only_user2": sorted(only_user2),
         "common": sorted(common),
-        "user1_admin": "*" in permissions1 and not analysis1["denied_actions"],
-        "user2_admin": "*" in permissions2 and not analysis2["denied_actions"],
+        "user1_admin": has_admin_access(analysis1),
+        "user2_admin": has_admin_access(analysis2),
         "analysis1": analysis1,
         "analysis2": analysis2,
     }

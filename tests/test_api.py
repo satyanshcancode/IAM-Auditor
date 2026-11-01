@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from iam_audit.api.main import app
@@ -12,6 +13,18 @@ from iam_audit.core.models import (
 )
 
 client = TestClient(app)
+
+API_KEY = "test-key"
+
+
+@pytest.fixture(autouse=True)
+def _api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API fails closed; give every test a configured key by default."""
+    monkeypatch.setenv("IAM_AUDIT_API_KEY", API_KEY)
+
+
+def _auth() -> dict[str, str]:
+    return {"X-API-Key": API_KEY}
 
 
 def test_health() -> None:
@@ -33,16 +46,16 @@ def test_inventory_success() -> None:
         "roles": [{"RoleName": "role-a"}],
     }
     with patch("iam_audit.api.main.list_inventory", return_value=payload):
-        response = client.get("/api/v1/inventory")
+        response = client.get("/api/v1/inventory", headers=_auth())
     assert response.status_code == 200
     assert response.json()["users"][0]["UserName"] == "alice"
 
 
 def test_inventory_error() -> None:
     with patch("iam_audit.api.main.list_inventory", side_effect=RuntimeError("boom")):
-        response = client.get("/api/v1/inventory")
+        response = client.get("/api/v1/inventory", headers=_auth())
     assert response.status_code == 500
-    assert response.json()["detail"] == "boom"
+    assert response.json()["detail"] == "Internal server error"
 
 
 def test_audit_success() -> None:
@@ -52,21 +65,21 @@ def test_audit_success() -> None:
         overall_status="HEALTHY",
     )
     with patch("iam_audit.api.main.run_full_audit", return_value=report):
-        response = client.get("/api/v1/audit")
+        response = client.get("/api/v1/audit", headers=_auth())
     assert response.status_code == 200
     assert response.json()["overall_status"] == "HEALTHY"
 
 
 def test_user_permissions_not_found() -> None:
     with patch("iam_audit.api.main.get_user_analysis", return_value=None):
-        response = client.get("/api/v1/users/nobody/permissions")
+        response = client.get("/api/v1/users/nobody/permissions", headers=_auth())
     assert response.status_code == 404
 
 
 def test_user_permissions_ok() -> None:
     analysis = PermissionAnalysis(username="alice", effective_actions={"s3:GetObject"})
     with patch("iam_audit.api.main.get_user_analysis", return_value=analysis):
-        response = client.get("/api/v1/users/alice/permissions")
+        response = client.get("/api/v1/users/alice/permissions", headers=_auth())
     assert response.status_code == 200
     assert response.json()["username"] == "alice"
 
@@ -74,11 +87,17 @@ def test_user_permissions_ok() -> None:
 def test_permission_check() -> None:
     with patch(
         "iam_audit.api.main.check_permission",
-        return_value={"username": "alice", "action": "s3:GetObject", "allowed": True, "decision": "allowed"},
+        return_value={
+            "username": "alice",
+            "action": "s3:GetObject",
+            "allowed": True,
+            "decision": "allowed",
+        },
     ):
         response = client.post(
             "/api/v1/permissions/check",
             json={"username": "alice", "action": "s3:GetObject"},
+            headers=_auth(),
         )
     assert response.status_code == 200
     assert response.json()["allowed"] is True
@@ -86,13 +105,17 @@ def test_permission_check() -> None:
 
 def test_permission_search_error() -> None:
     with patch("iam_audit.api.main.search_by_permission", side_effect=RuntimeError("aws down")):
-        response = client.post("/api/v1/permissions/search", json={"action": "s3:GetObject"})
+        response = client.post(
+            "/api/v1/permissions/search", json={"action": "s3:GetObject"}, headers=_auth()
+        )
     assert response.status_code == 500
 
 
 def test_permission_search_ok() -> None:
     with patch("iam_audit.api.main.search_by_permission", return_value=["alice"]):
-        response = client.post("/api/v1/permissions/search", json={"action": "s3:GetObject"})
+        response = client.post(
+            "/api/v1/permissions/search", json={"action": "s3:GetObject"}, headers=_auth()
+        )
     assert response.status_code == 200
     assert response.json()["count"] == 1
 
@@ -100,24 +123,37 @@ def test_permission_search_ok() -> None:
 def test_compare_users() -> None:
     result = UserComparisonResult(user1="alice", user2="bob", common=["s3:GetObject"])
     with patch("iam_audit.api.main.compare_two_users", return_value=result):
-        response = client.get("/api/v1/users/compare", params={"user1": "alice", "user2": "bob"})
+        response = client.get(
+            "/api/v1/users/compare", params={"user1": "alice", "user2": "bob"}, headers=_auth()
+        )
     assert response.status_code == 200
     assert response.json()["user1"] == "alice"
 
 
 def test_compare_users_not_found() -> None:
     with patch("iam_audit.api.main.compare_two_users", return_value=None):
-        response = client.get("/api/v1/users/compare", params={"user1": "a", "user2": "b"})
+        response = client.get(
+            "/api/v1/users/compare", params={"user1": "a", "user2": "b"}, headers=_auth()
+        )
     assert response.status_code == 404
 
 
-def test_api_key_required(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("IAM_AUDIT_API_KEY", "secret")
-    response = client.get("/api/v1/inventory")
+def test_api_key_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = client.get("/api/v1/inventory", headers={"X-API-Key": "wrong"})
     assert response.status_code == 401
 
-    with patch("iam_audit.api.main.list_inventory", return_value={"users": [], "groups": [], "roles": []}):
-        authorized = client.get("/api/v1/inventory", headers={"X-API-Key": "secret"})
+    with patch(
+        "iam_audit.api.main.list_inventory", return_value={"users": [], "groups": [], "roles": []}
+    ):
+        authorized = client.get("/api/v1/inventory", headers=_auth())
     assert authorized.status_code == 200
     # health remains public
+    assert client.get("/health").status_code == 200
+
+
+def test_api_fails_closed_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With no IAM_AUDIT_API_KEY configured, /api/v1 must refuse to serve."""
+    monkeypatch.delenv("IAM_AUDIT_API_KEY", raising=False)
+    response = client.get("/api/v1/inventory")
+    assert response.status_code == 503
     assert client.get("/health").status_code == 200

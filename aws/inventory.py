@@ -6,6 +6,7 @@ from aws import policies
 from aws.permissions import (
     analyze_user_permissions,
     format_action,
+    has_admin_access,
     print_analysis_notes,
     print_policy_sources,
 )
@@ -104,9 +105,7 @@ def user_summary() -> None:
         else:
             print("Policy : None")
 
-        permissions = analysis["effective_actions"]
-
-        if permissions and "*" in permissions and not analysis["denied_actions"]:
+        if has_admin_access(analysis):
             print("\n[WARNING] Full AWS Administrator Access (*)")
 
     print("\n" + "=" * 65)
@@ -158,7 +157,7 @@ def user_details(username: str) -> bool:
 
     print_analysis_notes(analysis)
 
-    if permissions and "*" in permissions and not analysis["denied_actions"]:
+    if has_admin_access(analysis):
         print("\n" + "-" * 65)
         print("[WARNING] SECURITY WARNING")
         print("-" * 65)

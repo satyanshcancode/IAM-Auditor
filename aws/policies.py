@@ -1,3 +1,4 @@
+import contextlib
 from fnmatch import fnmatchcase
 from typing import Any
 
@@ -264,3 +265,65 @@ def remove_actions_covered_by_denies(
         return set(allowed_actions)
 
     return {action for action in allowed_actions if not action_is_covered(action, denied_actions)}
+
+
+def get_login_profile(username: str) -> dict[str, Any] | None:
+    """Return user's login profile if user has a console password, else None."""
+    try:
+        profile = iam.get_login_profile(UserName=username).get("LoginProfile")
+        return dict(profile) if isinstance(profile, dict) else None
+    except Exception:
+        return None
+
+
+def list_mfa_devices(username: str) -> list[Any]:
+    """Return MFA devices for a user with pagination support."""
+    return paginate("list_mfa_devices", "MFADevices", UserName=username)
+
+
+def list_access_keys(username: str) -> list[Any]:
+    """Return access keys for a user with pagination support."""
+    return paginate("list_access_keys", "AccessKeyMetadata", UserName=username)
+
+
+def get_access_key_last_used(access_key_id: str) -> dict[str, Any]:
+    """Return access key last used metadata."""
+    try:
+        res = iam.get_access_key_last_used(AccessKeyId=access_key_id)
+        val = res.get("AccessKeyLastUsed", {})
+        return dict(val) if isinstance(val, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_account_summary() -> dict[str, Any]:
+    """Return IAM account summary map."""
+    try:
+        val = iam.get_account_summary().get("SummaryMap", {})
+        return dict(val) if isinstance(val, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_credential_report() -> list[dict[str, str]] | None:
+    """Return parsed IAM credential report lines as a list of dicts, or None if failed."""
+    import csv
+    import io
+
+    try:
+        # Request generation (may be INPROGRESS or COMPLETE)
+        with contextlib.suppress(Exception):
+            iam.generate_credential_report()
+
+        report_res = iam.get_credential_report()
+        content = report_res.get("Content")
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+        if not content:
+            return None
+
+        reader = csv.DictReader(io.StringIO(content))
+        return list(reader)
+    except Exception:
+        return None
+

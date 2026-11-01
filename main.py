@@ -1,28 +1,9 @@
-from aws.inventory import (
-    inventory_dashboard
-)
-
-from aws.permissions import (
-    get_user_permissions
-)
-
-from aws.simulator import (
-    simulate_permission
-)
-
-from aws.search import (
-    search_permission
-)
-
-from aws.compare import (
-    compare_users,
-    user_exists
-)
-
-from aws.report import (
-    generate_report
-)
-
+from aws.compare import compare_users, user_exists
+from aws.inventory import inventory_dashboard
+from aws.permissions import get_user_permissions
+from aws.report import generate_report
+from aws.search import search_permission
+from aws.simulator import simulate_permission
 
 # =====================================================
 # MAIN MENU

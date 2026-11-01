@@ -40,24 +40,34 @@ def export_csv(report: AuditReport, path: Path) -> None:
         writer.writerow(
             [
                 "Finding ID",
+                "Rule ID",
+                "Category",
                 "Severity",
+                "Confidence",
                 "Resource",
                 "Resource Type",
                 "Issue",
                 "Impact",
                 "Recommendation",
+                "Compliance Mappings",
+                "Collection Status",
             ]
         )
         for finding in report.findings:
             writer.writerow(
                 [
                     finding.id,
+                    finding.rule_id or finding.id,
+                    finding.category,
                     finding.severity,
+                    finding.confidence,
                     finding.resource,
                     finding.resource_type,
                     finding.issue,
                     finding.impact,
                     finding.recommendation,
+                    "; ".join(finding.compliance_mappings),
+                    finding.collection_status,
                 ]
             )
 
@@ -68,10 +78,16 @@ def export_sarif(report: AuditReport, path: Path, tool_name: str = "iam-access-a
 
     results = []
     for finding in report.findings:
-        level = "error" if finding.severity == "CRITICAL" else "warning"
+        if finding.severity in ("CRITICAL", "HIGH"):
+            level = "error"
+        elif finding.severity in ("WARNING", "MEDIUM"):
+            level = "warning"
+        else:
+            level = "note"
+
         results.append(
             {
-                "ruleId": finding.id,
+                "ruleId": finding.rule_id or finding.id,
                 "level": level,
                 "message": {"text": f"{finding.issue} - {finding.impact}"},
                 "locations": [
@@ -96,7 +112,7 @@ def export_sarif(report: AuditReport, path: Path, tool_name: str = "iam-access-a
                 "tool": {
                     "driver": {
                         "name": tool_name,
-                        "informationUri": "https://github.com/yourusername/iam-access-auditor",
+                        "informationUri": "https://github.com/satyanshcancode/IAM-Auditor",
                         "version": "2.0.0",
                     }
                 },
@@ -116,24 +132,53 @@ def export_console_summary(report: AuditReport) -> str:
         "           IAM SECURITY AUDIT SUMMARY",
         "=" * 65,
         "",
-        f"Generated   : {report.generated_at}",
-        f"Users       : {report.total_users}",
-        f"Groups      : {report.total_groups}",
-        f"Roles       : {report.total_roles}",
+        f"Generated             : {report.generated_at}",
+        f"Users                 : {report.total_users}",
+        f"Groups                : {report.total_groups}",
+        f"Roles                 : {report.total_roles}",
         "",
-        f"Critical    : {report.critical_findings}",
-        f"Warnings    : {report.warnings}",
-        f"Status      : {report.overall_status}",
+        f"Critical              : {report.critical_findings}",
+        f"Warnings / High       : {report.warnings}",
+        f"Privilege Escalations : {report.privilege_escalation_count}",
+        f"Sensitive Wildcards   : {report.sensitive_wildcard_count}",
+        f"Role Trust Issues     : {report.role_trust_issue_count}",
+        f"MFA Issues            : {report.mfa_issues}",
+        f"Old Access Keys       : {report.old_access_keys}",
+        f"Unused Keys           : {report.unused_access_keys}",
+        f"Inactive Users        : {report.inactive_users}",
+        f"Inline Policies       : {report.inline_policies_count}",
+        f"Overall Status        : {report.overall_status}",
         "",
     ]
+
+    if report.attack_paths:
+        lines.append("ATTACK PATH GRAPH CORRELATIONS")
+        lines.append("-" * 65)
+        for ap in report.attack_paths:
+            lines.append(f"[{ap.severity}] {ap.path_id}: {ap.title}")
+            lines.append(f"  Summary: {ap.risk_summary}")
+            for step in ap.steps:
+                lines.append(f"    Step {step.step_number}: {step.source_entity} --({step.action_or_edge})--> {step.target_entity}")
+            lines.append(f"  Remediation: {ap.remediation}")
+            lines.append("")
+
+    if report.collection_errors:
+        lines.append("COLLECTION WARNINGS")
+        lines.append("-" * 65)
+        for err in report.collection_errors:
+            lines.append(f"[WARNING] {err.get('check')}: {err.get('message')}")
+        lines.append("")
 
     if report.findings:
         lines.append("FINDINGS")
         lines.append("-" * 65)
         for finding in report.findings:
-            lines.append(f"[{finding.severity}] {finding.id}: {finding.issue}")
+            lines.append(f"[{finding.severity}] {finding.id} ({finding.category}): {finding.issue}")
             lines.append(f"  Resource: {finding.resource}")
+            lines.append(f"  Confidence: {finding.confidence}")
             lines.append(f"  Recommendation: {finding.recommendation}")
+            if finding.compliance_mappings:
+                lines.append(f"  Compliance: {', '.join(finding.compliance_mappings)}")
             lines.append("")
 
     lines.append("=" * 65)

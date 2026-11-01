@@ -24,7 +24,10 @@ def find_users_with_permission(permission: str) -> list[str]:
                 PolicySourceArn=user["Arn"],
                 ActionNames=[permission],
             )
-            decision = simulation["EvaluationResults"][0]["EvalDecision"]
+            results = simulation.get("EvaluationResults") or []
+            if not results:
+                raise KeyError("SimulatePrincipalPolicy returned no EvaluationResults")
+            decision = results[0]["EvalDecision"]
             if decision.lower() == "allowed":
                 matched_users.append(user["UserName"])
         except Exception as e:

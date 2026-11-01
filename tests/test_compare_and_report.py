@@ -15,12 +15,15 @@ class CompareTests(unittest.TestCase):
 
 class ReportTests(unittest.TestCase):
     def test_build_findings_assigns_unique_ids(self):
-        with patch(
-            "aws.report.find_admin_accounts",
-            return_value=["alice", "bob"],
-        ), patch(
-            "aws.report.find_empty_groups",
-            return_value=["UnusedGroup"],
+        with (
+            patch(
+                "aws.report.find_admin_accounts",
+                return_value=["alice", "bob"],
+            ),
+            patch(
+                "aws.report.find_empty_groups",
+                return_value=["UnusedGroup"],
+            ),
         ):
             findings = build_findings()
 
@@ -64,6 +67,10 @@ class CollectAuditTests(unittest.TestCase):
             patch("aws.report.analyze_user_permissions", side_effect=fake_analyze),
             patch("aws.report.find_empty_groups", return_value=[]),
             patch("aws.report.roles_without_policies", return_value=[]),
+            patch("aws.report.audit_mfa_hygiene", return_value=([], [])),
+            patch("aws.report.audit_access_key_hygiene", return_value=([], [])),
+            patch("aws.report.audit_user_inactivity_hygiene", return_value=([], [])),
+            patch("aws.report.audit_inline_policies", return_value=([], [])),
         ):
             snapshot = collect_account_audit()
 

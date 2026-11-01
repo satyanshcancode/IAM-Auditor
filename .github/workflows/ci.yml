@@ -36,12 +36,13 @@ jobs:
         run: mypy iam_audit/ aws/
 
       - name: Test with pytest
-        run: pytest --cov=iam_audit --cov=aws --cov-report=xml
+        run: pytest --cov=iam_audit --cov=aws --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         with:
           files: ./coverage.xml
+          fail_ci_if_error: true
 
   docker-build:
     runs-on: ubuntu-latest
@@ -52,7 +53,8 @@ jobs:
       - name: Build Docker image
         run: docker build -t iam-audit:latest .
 
-      - name: Test Docker image
-        run: |
-          docker run --rm iam-audit:latest python -c "import iam_audit; print(iam_audit.__version__)"
-          docker run --rm iam-audit:latest iam-audit --help
+      - name: Test Docker CLI --help
+        run: docker run --rm iam-audit:latest --help
+
+      - name: Test Docker CLI offline demo
+        run: docker run --rm iam-audit:latest demo

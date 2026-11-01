@@ -1,19 +1,49 @@
+# Python bytecode & caches
 __pycache__/
 *.pyc
 *.pyo
-*.egg-info/
-.eggs/
+*.pyd
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+.eggs/
+*.egg-info/
+
+# Virtual environments
 .env
+.env.*
 .venv/
 venv/
+env/
+
+# Local AWS credentials & sensitive certificates
+.aws/
+*.pem
+*.key
+*.p12
+
+# Build & Terraform artifacts
+build/
+dist/
+*.egg
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/.terraform.lock.hcl
+
+# Local audit output & sensitive reports
 *.log
-reports/*.txt
+reports/
 output/
-*.zip
+demo_audit_report.json
+demo_findings.sarif
+demo_remediation.sh
+audit_report.*
+remediate_*.sh
+
+# Git & IDE metadata
 .git/
 .gitignore
+.vscode/
+.idea/

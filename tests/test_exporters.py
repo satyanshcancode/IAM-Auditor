@@ -97,12 +97,17 @@ class TestExporters(unittest.TestCase):
                 rows[0],
                 [
                     "Finding ID",
+                    "Rule ID",
+                    "Category",
                     "Severity",
+                    "Confidence",
                     "Resource",
                     "Resource Type",
                     "Issue",
                     "Impact",
                     "Recommendation",
+                    "Compliance Mappings",
+                    "Collection Status",
                 ],
             )
             self.assertEqual(len(rows), 3)  # header + 2 findings
